@@ -167,13 +167,11 @@ class IRSSparkJob(object):
     @staticmethod
     def reduce_by_key_func(a, b):
         return a + b
-
+    
     @staticmethod
     def get_tags(x):
         tags = [elem.tag for elem in x.iter()]
-        for tag in tags:
-            for item in x.iter(tag):
-                return item.text
+        return [[item.text for item in x.iter(tag)] for tag in tags]
 
     def run_job(self, sc, sqlc):
         input_data = sc.textFile(self.args.input,

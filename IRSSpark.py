@@ -4,7 +4,6 @@ import logging
 import os
 import re
 
-from io import BytesIO
 from tempfile import TemporaryFile
 
 import boto3
@@ -13,7 +12,6 @@ import botocore
 import xml.etree.ElementTree as ET
 from pyspark import SparkContext, SparkConf
 from pyspark.sql import SQLContext, SparkSession
-from pyspark.streaming import StreamingContext
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 
 LOGGING_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
@@ -60,35 +58,35 @@ class IRSSparkJob(object):
         arg_parser.add_argument("--num_input_partitions", type=int,
                                 default=self.num_input_partitions,
                                 help="Number of input splits/partitions, "
-                                "number of parallel tasks to process records "
-                                "files/records")
+                                     "number of parallel tasks to process records "
+                                     "files/records")
         arg_parser.add_argument("--num_output_partitions", type=int,
                                 default=self.num_output_partitions,
                                 help="Number of output partitions")
         arg_parser.add_argument("--output_format", default="parquet",
                                 help="Output format: parquet (default),"
-                                " orc, json, csv")
+                                     " orc, json, csv")
         arg_parser.add_argument("--output_compression", default="gzip",
                                 help="Output compression codec: None,"
-                                " gzip/zlib (default), snappy, lzo, etc.")
+                                     " gzip/zlib (default), snappy, lzo, etc.")
         arg_parser.add_argument("--output_option", action='append', default=[],
                                 help="Additional output option pair"
-                                " to set (format-specific) output options, e.g.,"
-                                " `header=true` to add a header line to CSV files."
-                                " Option name and value are split at `=` and"
-                                " multiple options can be set by passing"
-                                " `--output_option <name>=<value>` multiple times")
+                                     " to set (format-specific) output options, e.g.,"
+                                     " `header=true` to add a header line to CSV files."
+                                     " Option name and value are split at `=` and"
+                                     " multiple options can be set by passing"
+                                     " `--output_option <name>=<value>` multiple times")
 
         arg_parser.add_argument("--local_temp_dir", default=None,
                                 help="Local temporary directory, used to"
-                                " buffer content from S3")
+                                     " buffer content from S3")
 
         arg_parser.add_argument("--log_level", default=self.log_level,
                                 help="Logging level")
         arg_parser.add_argument("--spark-profiler", action='store_true',
                                 help="Enable PySpark profiler and log"
-                                " profiling metrics if job has finished,"
-                                " cf. spark.python.profile")
+                                     " profiling metrics if job has finished,"
+                                     " cf. spark.python.profile")
 
         self.add_arguments(arg_parser)
         args = arg_parser.parse_args()
@@ -119,11 +117,11 @@ class IRSSparkJob(object):
         logging.basicConfig(level=level, format=LOGGING_FORMAT)
 
     def init_accumulators(self, sc):
-        #actual number of XML element trees processed
+        # actual number of XML element trees processed
         self.records_processed = sc.accumulator(0)
         # number of files successfully downloaded from input path provided
         self.xml_input_processed = sc.accumulator(0)
-        #number of files that failed to download
+        # number of files that failed to download
         self.xml_input_failed = sc.accumulator(0)
 
     def get_logger(self, spark_context=None):
@@ -145,11 +143,10 @@ class IRSSparkJob(object):
             appName=self.name,
             conf=conf)
         sqlc = SQLContext(sparkContext=sc)
-        streamc = StreamingContext(sc, 1)
 
         self.init_accumulators(sc)
 
-        self.run_job(sc, sqlc, streamc)
+        self.run_job(sc, sqlc)
 
         if self.args.spark_profiler:
             sc.show_profiles()
@@ -178,20 +175,19 @@ class IRSSparkJob(object):
             for item in x.iter(tag):
                 return item.text
 
-    def run_job(self, sc, sqlc, streamc):
+    def run_job(self, sc, sqlc):
         input_data = sc.textFile(self.args.input,
                                  minPartitions=self.args.num_input_partitions)
 
         output = input_data.mapPartitionsWithIndex(self.process_xmls) \
-             .reduceByKey(self.reduce_by_key_func)
+            .reduceByKey(self.reduce_by_key_func)
 
-        sqlc.createDataFrame(output, schema=self.output_schema).show()
-            # .coalesce(self.args.num_output_partitions) \
-            # .write \
-            # .format(self.args.output_format) \
-            # .option("compression", self.args.output_compression) \
-            # .options(**self.get_output_options()) \
-            # .saveAsTable(self.args.output)
+        sqlc.createDataFrame(output, schema=self.output_schema).coalesce(self.args.num_output_partitions) \
+            .write \
+            .format(self.args.output_format) \
+            .option("compression", self.args.output_compression) \
+            .options(**self.get_output_options()) \
+            .saveAsTable(self.args.output)
 
         self.log_aggregators(sc)
 
@@ -215,7 +211,7 @@ class IRSSparkJob(object):
                 bucketname = s3match.group(1)
                 path = s3match.group(2)
                 xmltemp = TemporaryFile(mode='w+b',
-                                         dir=self.args.local_temp_dir)
+                                        dir=self.args.local_temp_dir)
                 try:
                     s3client.download_fileobj(bucketname, path, xmltemp)
                 except botocore.client.ClientError as exception:
@@ -226,16 +222,16 @@ class IRSSparkJob(object):
                     continue
                 xmltemp.seek(0)
                 stream = xmltemp
-            # elif uri.startswith('hdfs:/'):
-            #     try:
-            #         import pydoop.hdfs as hdfs
-            #         self.get_logger().error("Reading from HDFS {}".format(uri))
-            #         stream = hdfs.open(uri)
-            #     except RuntimeError as exception:
-            #         self.get_logger().error(
-            #             'Failed to open {}: {}'.format(uri, exception))
-            #         self.warc_input_failed.add(1)
-            #         continue
+            elif uri.startswith('hdfs:/'):
+                try:
+                    import pydoop.hdfs as hdfs
+                    self.get_logger().error("Reading from HDFS {}".format(uri))
+                    stream = hdfs.open(uri)
+                except RuntimeError as exception:
+                    self.get_logger().error(
+                        'Failed to open {}: {}'.format(uri, exception))
+                    self.xml_input_failed.add(1)
+                    continue
             else:
                 self.get_logger().info('Reading local stream {}'.format(uri))
                 if uri.startswith('file:'):
@@ -249,65 +245,27 @@ class IRSSparkJob(object):
                     self.xml_input_failed.add(1)
                     continue
 
-           # try:
-                # archive_iterator = ArchiveIterator(stream,
-                #                                    no_record_parse=no_parse, arc2warc=True)
-            element_tree = ET.parse(stream)
-            element_tree_tuple = [(elem.tag.strip("{'{http://www.irs.gov/efile}"), elem.text.strip()) for elem in element_tree.iter()]
+            try:
+                element_tree = ET.parse(stream)
+                element_tree_tuple = [(elem.tag.strip("{'{http://www.irs.gov/efile}"), elem.text.strip()) for elem in
+                                      element_tree.iter()]
 
-            # file_rdd = streamc.textFileStream(stream)
-            # root_node = file_rdd.map(lambda s: ET.ElementTree(ET.fromstring(s[1])))
-            # element_tree = root_node.flatMap(
-            #         lambda s: [(elem.tag.strip("{'{http://www.irs.gov/efile}"), elem.text.strip()) for elem in
-            #                    s.iter()])
-            for res in self.iterate_records(uri, element_tree_tuple):
-                yield res
-            # except:
-            #     self.xml_input_failed.add(1)
-            #     self.get_logger().error(
-            #         'Invalid XML: {}'.format(uri))
-            # finally:
-            #     stream.close()
+                for res in self.iterate_records(uri, element_tree_tuple):
+                    yield res
+            except:
+                self.xml_input_failed.add(1)
+                self.get_logger().error(
+                    'Invalid XML: {}'.format(uri))
+            finally:
+                stream.close()
 
     def process_record(self, record):
         raise NotImplementedError('Processing record needs to be customized')
 
     def iterate_records(self, _uri, element_tree):
-        """Iterate over all XML element trees. This method can be customized
-           and allows to access also values from ArchiveIterator, namely
-           WARC record offset and length."""
+        """Iterate over all XML element trees. This method is
+         where every job can have its customized behaviour by
+          implementing process_record function"""
         for res in self.process_record(element_tree):
             yield res
             self.records_processed.add(1)
-            # WARC record offset and length should be read after the record
-            # has been processed, otherwise the record content is consumed
-            # while offset and length are determined:
-            #  warc_record_offset = archive_iterator.get_record_offset()
-            #  warc_record_length = archive_iterator.get_record_length()
-
-    # @staticmethod
-    # def is_wet_text_record(record):
-    #     """Return true if WARC record is a WET text/plain record"""
-    #     return (record.rec_type == 'conversion' and
-    #             record.content_type == 'text/plain')
-    #
-    # @staticmethod
-    # def is_wat_json_record(record):
-    #     """Return true if WARC record is a WAT record"""
-    #     return (record.rec_type == 'metadata' and
-    #             record.content_type == 'application/json')
-    #
-    # @staticmethod
-    # def is_html(record):
-    #     """Return true if (detected) MIME type of a record is HTML"""
-    #     html_types = ['text/html', 'application/xhtml+xml']
-    #     if (('WARC-Identified-Payload-Type' in record.rec_headers) and
-    #         (record.rec_headers['WARC-Identified-Payload-Type'] in
-    #          html_types)):
-    #         return True
-    #     content_type = record.http_headers.get_header('content-type', None)
-    #     if content_type:
-    #         for html_type in html_types:
-    #             if html_type in content_type:
-    #                 return True
-    #     return False

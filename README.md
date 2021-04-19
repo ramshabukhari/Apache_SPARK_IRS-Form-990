@@ -31,6 +31,14 @@ The input file is being divided into partitions (args: no of input paritions).Ev
 The buffered stream is converted into an Element tree via Python's builtin library and every subsequent job can then work on this element tree in each partition sepaartely.
 The end result is finally reduced based on key value, converted into a dataframe according to specified schema and stored as a parquet file in Spark Sql warehouse.
 
+#### To run the Count the Cities job locally
+$SPARK_HOME/spark-submit --py-files path_to_IRSSpark.py  path_to_CitiesCountJob.py --num_output_partitions 1 --log_level WARN path_to_input_file citiesnames
+
+#### To run in a cluster
+Since the dataset is availabe on AWS S3, the cluster can be set up on AWS EMR and data retrieval will be totally free. Spark installation will be needed.The same
+command can be used with modified number of output partitions depending upon the cluster size.
+
+
 ### Sample Output
  A selective sample output for a single file where the task was to calculate the count of cities where IRS-990 forms were filed.
 
